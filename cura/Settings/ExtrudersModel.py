@@ -4,6 +4,7 @@
 from PyQt5.QtCore import Qt, pyqtSignal, pyqtProperty
 
 import UM.Qt.ListModel
+import UM.Math.Color
 
 from . import ExtruderManager
 
@@ -32,6 +33,12 @@ class ExtrudersModel(UM.Qt.ListModel.ListModel):
     ##  List of colours to display if there is no material or the material has no known
     #   colour.
     defaultColours = ["#ffc924", "#86ec21", "#22eeee", "#245bff", "#9124ff", "#ff24c8"]
+
+    ##  Amount by which the material colour is shaded for the last extruder.
+    #
+    #   The first extruder gets the pure colour, the other extruders are gradually made
+    #   darker or lighter depending on the brightness of the pure colour.
+    shadeAmount = 0.4
 
     ##  Initialises the extruders model, defining the roles and listening for
     #   changes in the data.
@@ -114,8 +121,8 @@ class ExtrudersModel(UM.Qt.ListModel.ListModel):
                 self.appendItem(item)
                 changed = True
 
-            manager = ExtruderManager.getInstance()
-            for extruder in manager.getMachineExtruders(global_container_stack.getId()):
+            machine_extruders = [extruder for extruder in ExtruderManager.getInstance().getMachineExtruders(global_container_stack.getId())]
+            for extruder in machine_extruders:
                 extruder_name = extruder.getName()
                 material = extruder.findContainer({ "type": "material" })
                 if material:
@@ -127,10 +134,11 @@ class ExtrudersModel(UM.Qt.ListModel.ListModel):
                     position = -1
                 default_colour = self.defaultColours[position] if position >= 0 and position < len(self.defaultColours) else self.defaultColours[0]
                 colour = material.getMetaDataEntry("color_code", default = default_colour) if material else default_colour
+                shade = self.shadeAmount * position / (len(machine_extruders) - 1) if len(machine_extruders) > 1 else 0
                 item = { #Construct an item with only the relevant information.
                     "id": extruder.getId(),
                     "name": extruder_name,
-                    "colour": colour,
+                    "colour": self._colourShade(colour, shade),
                     "index": position
                 }
                 self.appendItem(item)
@@ -139,3 +147,26 @@ class ExtrudersModel(UM.Qt.ListModel.ListModel):
         if changed:
             self.sort(lambda item: item["index"])
             self.modelChanged.emit()
+
+    ##  Create a shade of a base colour that is either brighter or darker, depending on the
+    #   brightness of the base colour.
+    #
+    #   \param base_colour \type{UM.Math.Color} Base colour to derive a shade of
+    #   \param shade \type{float} Amount by which to shade the colour (0: don't shade, 1: full black/white)
+    def _colourShade(self, base_colour, shade):
+        colour_shade = base_colour
+        if shade > 0:
+            new_colour = UM.Math.Color.Color.fromRGBString(base_colour)
+            if (new_colour.r + new_colour.g + new_colour.b) / 3 < .5:
+                mix = 1 # lighten the shade
+            else:
+                mix = 0 # darken the shade
+            new_colour.setValues(
+                new_colour.r * (1 - shade) + shade * mix,
+                new_colour.g * (1 - shade) + shade * mix,
+                new_colour.b * (1 - shade) + shade * mix,
+                1.0
+            )
+            colour_shade = new_colour.toRGBString()
+
+        return colour_shade

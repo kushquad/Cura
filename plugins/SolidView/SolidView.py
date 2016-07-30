@@ -7,8 +7,9 @@ from UM.Scene.Selection import Selection
 from UM.Resources import Resources
 from UM.Application import Application
 from UM.Preferences import Preferences
-from UM.View.Renderer import Renderer
+from UM.Math.Color import Color
 
+from UM.View.Renderer import Renderer
 from UM.View.GL.OpenGL import OpenGL
 
 import cura.Settings
@@ -33,6 +34,7 @@ class SolidView(View):
 
         if not self._enabled_shader:
             self._enabled_shader = OpenGL.getInstance().createShaderProgram(Resources.getPath(Resources.Shaders, "overhang.shader"))
+            self._enabled_shader.setUniformValue("u_shininess", 50.0)
 
         if not self._disabled_shader:
             self._disabled_shader = OpenGL.getInstance().createShaderProgram(Resources.getPath(Resources.Shaders, "striped.shader"))
@@ -53,10 +55,6 @@ class SolidView(View):
         for node in DepthFirstIterator(scene.getRoot()):
             if not node.render(renderer):
                 if node.getMeshData() and node.isVisible():
-                    # TODO: Find a better way to handle this
-                    #if node.getBoundingBoxMesh():
-                    #    renderer.queueNode(scene.getRoot(), mesh = node.getBoundingBoxMesh(),mode = Renderer.RenderLines)
-
                     uniforms = {}
                     if self._extruders_model.rowCount() == 0:
                         material = Application.getInstance().getGlobalContainerStack().findContainer({ "type": "material" })
@@ -70,14 +68,8 @@ class SolidView(View):
 
                         material_color = self._extruders_model.getItem(extruder_index)["colour"]
                     try:
-                        # Colors are passed as rgb hex strings (eg "#ffffff"), and the shader needs
-                        # an rgba list of floats (eg [1.0, 1.0, 1.0, 1.0])
-                        uniforms["diffuse_color"] = [
-                            int(material_color[1:3], 16) / 255,
-                            int(material_color[3:5], 16) / 255,
-                            int(material_color[5:7], 16) / 255,
-                            1.0
-                        ]
+                        color = Color.fromRGBString(material_color)
+                        uniforms["diffuse_color"] = [color.r, color.g, color.b, color.a]
                     except ValueError:
                         pass
 
@@ -93,7 +85,3 @@ class SolidView(View):
 
     def endRendering(self):
         pass
-
-    #def _onPreferenceChanged(self, preference):
-        #if preference == "view/show_overhang": ## Todo: This a printer only setting. Should be removed from Uranium.
-            #self._enabled_material = None
